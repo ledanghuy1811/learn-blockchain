@@ -39,13 +39,17 @@ contract Crypto is ERC20 {
     }
 
     function setWhiteList(address addr) public {
-        require(msg.sender == contractOwner, "Error: only contract owner can set whiteList!");
+        require(msg.sender == contractOwner, "Crypto: only contract owner can set whiteList!");
         whiteList[addr] = true;
     }
 
+    function isWhiteList(address addr) public view returns (bool) {
+        return whiteList[addr];
+    } 
+
     function _transfer(address from, address to, uint256 amount) internal override {
         if(!whiteList[to]) {
-            require(balanceOf(to) + amount < maxHolding, "Error: Execution reverted!");     // each token holder not in white
+            require(balanceOf(to) + amount < maxHolding, "Crypto: Execution reverted!");     // each token holder not in white
                                                                                             // list hold maximum 1000000
         }
         
@@ -53,8 +57,8 @@ contract Crypto is ERC20 {
     } 
 
     function _mint(address account, uint256 amount) internal override {
-        require(msg.sender == contractOwner, "Error: contract owner call this function in constructor!");
-        require(!isMinted, "Error: mint fuction is called in constructor!");
+        require(msg.sender == contractOwner, "Crypto: contract owner call this function in constructor!");
+        require(!isMinted, "Crypto: mint fuction is called in constructor!");
 
         ERC20._mint(account, amount);
     }

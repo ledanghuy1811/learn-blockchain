@@ -2,144 +2,214 @@ const { ethers, upgrades } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
-describe("Crypto", () => {
-  let owner;
-  let addr1;
-  let addr2;
-  let addrs;
-  let mockERC20;
-  let lockContract;
+describe("Crypto and Staking:", () => {
+	let owner;
+	let addr1;
+	let addr2;
+	let addrs;
+	let cryptoContract;
+	let stakingContract;
+	let stakingToken;
 
-  before(async () => {
-    [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
+	before(async () => {
+		[owner, addr1, addr2, ...addrs] = await ethers.getSigners();
 
-    let mockFactory = await ethers.getContractFactory("MockERC20");
-    mockERC20 = await mockFactory.deploy();
+		cryptoContract = await ethers.deployContract("Crypto");
 
-    let tx = await mockERC20
-      .connect(addr1)
-      .mint(ethers.utils.parseEther("1000").toString());
+		// let tx = await cryptoContract
+		//   .connect(addr1)
+		//   .mint(ethers.utils.parseEther("1000").toString());
+		// await tx.wait();
 
-    await tx.wait();
+		// tx = await cryptoContract
+		//   .connect(addr2)
+		//   .mint(ethers.utils.parseEther("1000").toString());
+		// await tx.wait();
 
-    tx = await mockERC20
-      .connect(addr2)
-      .mint(ethers.utils.parseEther("1000").toString());
-    await tx.wait();
+		stakingContract = await ethers.deployContract("Staking", [
+			cryptoContract.target,
+		]);
 
-    let lockFactory = await ethers.getContractFactory("Lock");
-    lockContract = await lockFactory.deploy();
-  });
+		stakingToken =
+			((await cryptoContract.totalSupply()) * BigInt(3)) / BigInt(10);
 
-  describe("lock()", () => {
-    before(async () => {
-      let tx = await mockERC20
-        .connect(addr1)
-        .approve(
-          lockContract.address,
-          ethers.utils.parseEther("1000").toString()
-        );
-      await tx.wait();
+		await cryptoContract.setWhiteList(stakingContract.target);
+		await cryptoContract.approve(stakingContract.target, stakingToken);
+	});
 
-      tx = await lockContract.connect(addr1).lock({
-        token: mockERC20.address,
-        amount: ethers.utils.parseEther("1000").toString(),
-        startTime: Math.ceil(new Date().getTime() / 1000),
-        duration: 86400, // one day
-        owner: addr1.address,
-      });
+	describe("Crypto:", () => {
+		it("Should assign the total supply of tokens to the owner", async () => {
+			const ownerBalance = await cryptoContract.balanceOf(owner.address);
 
-      await tx.wait();
-    });
+			expect(await cryptoContract.totalSupply()).to.equal(ownerBalance);
+		});
 
-    it("Check lock data", async () => {
-      const nonce = await lockContract.nonce(addr1.address);
-      const idx = await lockContract.getLockIdx(
-        addr1.address,
-        parseInt(nonce) - 1
-      );
-      const data = await lockContract.lockData(idx);
-      expect(data.token).to.be.eq(mockERC20.address);
-      expect(data.owner).to.be.eq(addr1.address);
-      expect(data.amount.toString()).to.be.eq(
-        ethers.utils.parseEther("1000").toString()
-      );
-    });
+		it("Should assign owner to white list", async () => {
+			const ownerAddress = owner.address;
 
-    it("Check can claimable", async () => {
-      const nonce = await lockContract.nonce(addr1.address);
-      const idx = await lockContract.getLockIdx(
-        addr1.address,
-        parseInt(nonce) - 1
-      );
-      const data = await lockContract.isClaimable(idx);
-      expect(data).to.be.eq(false);
-    });
-  });
+			expect(await cryptoContract.isWhiteList(ownerAddress)).to.equal(true);
+		});
 
-  describe("unlock()", () => {
-    before(async () => {
-      let tx = await mockERC20
-        .connect(addr2)
-        .approve(
-          lockContract.address,
-          ethers.utils.parseEther("1000").toString()
-        );
-      await tx.wait();
+		describe("Before in white list:", () => {
+			it("Should not receive more than 1 million token", async () => {
+				const tokenHolderAddress = addr1.address;
+				const amount = 1000000;
 
-      const blockNumBefore = await ethers.provider.getBlockNumber();
-      const blockBefore = await ethers.provider.getBlock(blockNumBefore);
-      const timestamp = blockBefore.timestamp;
+				await expect(
+					cryptoContract.transfer(tokenHolderAddress, amount)
+				).to.be.revertedWith("Crypto: Execution reverted!");
+			});
+		});
 
-      tx = await lockContract.connect(addr2).lock({
-        token: mockERC20.address,
-        amount: ethers.utils.parseEther("1000").toString(),
-        startTime: timestamp,
-        duration: 86400, // one day
-        owner: addr2.address,
-      });
+		describe("After in white list:", () => {
+			before(async () => {
+				await cryptoContract.setWhiteList(addr1.address);
+			});
 
-      await tx.wait();
+			it("Should receive more than 1 million token", async () => {
+				const tokenHolderAddress = addr1.address;
+				const amount = 1000000;
 
-      await time.increaseTo(timestamp + 86400);
+				await cryptoContract.transfer(tokenHolderAddress, amount);
+			});
+		});
+	});
 
-      const nonce = await lockContract.nonce(addr2.address);
-      const idx = await lockContract.getLockIdx(
-        addr2.address,
-        parseInt(nonce) - 1
-      );
-      tx = await lockContract.connect(addr2).unlock(idx);
-    });
+	describe("Staking:", () => {
+		describe("Initialize staking token:", () => {
+			it("Should initialize by owner", async () => {
+				const tx = await stakingContract.connect(addr1);
 
-    it("Check lock data", async () => {
-      const nonce = await lockContract.nonce(addr2.address);
-      const idx = await lockContract.getLockIdx(
-        addr2.address,
-        parseInt(nonce) - 1
-      );
-      const data = await lockContract.lockData(idx);
-      expect(data.token).to.be.eq(mockERC20.address);
-      expect(data.owner).to.be.eq(addr2.address);
-      expect(data.amount.toString()).to.be.eq(
-        ethers.utils.parseEther("1000").toString()
-      );
-    });
+				await expect(tx.initialize()).to.be.revertedWith(
+					"Ownable: caller is not the owner"
+				);
+			});
 
-    it("Check can claimable", async () => {
-      const nonce = await lockContract.nonce(addr2.address);
-      const idx = await lockContract.getLockIdx(
-        addr2.address,
-        parseInt(nonce) - 1
-      );
-      const data = await lockContract.isClaimable(idx);
-      expect(data).to.be.eq(true);
-    });
+			it("Should initialize once time", async () => {
+				await stakingContract.initialize();
 
-    it("Check balance of unlocker", async () => {
-      const balance = await mockERC20.balanceOf(addr2.address);
-      expect(balance.toString()).to.be.eq(
-        ethers.utils.parseEther("1000").toString()
-      );
-    });
-  });
+				await expect(stakingContract.initialize()).to.be.revertedWith(
+					"Staking: initialized!"
+				);
+			});
+
+			it("Should initialize with 30% of token", async () => {
+				const stakingBalance = await cryptoContract.balanceOf(
+					stakingContract.target
+				);
+
+				expect(stakingBalance).to.equal(stakingToken);
+			});
+		});
+	});
+
+	// describe("lock()", () => {
+	//   before(async () => {
+	//     let tx = await cryptoContract
+	//       .connect(addr1)
+	//       .approve(
+	//         stakingContract.address,
+	//         ethers.utils.parseEther("1000").toString()
+	//       );
+	//     await tx.wait();
+
+	//     tx = await stakingContract.connect(addr1).lock({
+	//       token: cryptoContract.address,
+	//       amount: ethers.utils.parseEther("1000").toString(),
+	//       startTime: Math.ceil(new Date().getTime() / 1000),
+	//       duration: 86400, // one day
+	//       owner: addr1.address,
+	//     });
+	//     await tx.wait();
+	//   });
+
+	//   it("Check lock data", async () => {
+	//     const nonce = await stakingContract.nonce(addr1.address);
+	//     const idx = await stakingContract.getLockIdx(
+	//       addr1.address,
+	//       parseInt(nonce) - 1
+	//     );
+	//     const data = await stakingContract.lockData(idx);
+	//     expect(data.token).to.be.eq(cryptoContract.address);
+	//     expect(data.owner).to.be.eq(addr1.address);
+	//     expect(data.amount.toString()).to.be.eq(
+	//       ethers.utils.parseEther("1000").toString()
+	//     );
+	//   });
+
+	//   it("Check can claimable", async () => {
+	//     const nonce = await stakingContract.nonce(addr1.address);
+	//     const idx = await stakingContract.getLockIdx(
+	//       addr1.address,
+	//       parseInt(nonce) - 1
+	//     );
+	//     const data = await stakingContract.isClaimable(idx);
+	//     expect(data).to.be.eq(false);
+	//   });
+	// });
+
+	// describe("unlock()", () => {
+	//   before(async () => {
+	//     let tx = await cryptoContract
+	//       .connect(addr2)
+	//       .approve(
+	//         stakingContract.address,
+	//         ethers.utils.parseEther("1000").toString()
+	//       );
+	//     await tx.wait();
+
+	//     const blockNumBefore = await ethers.provider.getBlockNumber();
+	//     const blockBefore = await ethers.provider.getBlock(blockNumBefore);
+	//     const timestamp = blockBefore.timestamp;
+
+	//     tx = await stakingContract.connect(addr2).lock({
+	//       token: cryptoContract.address,
+	//       amount: ethers.utils.parseEther("1000").toString(),
+	//       startTime: timestamp,
+	//       duration: 86400, // one day
+	//       owner: addr2.address,
+	//     });
+	//     await tx.wait();
+
+	//     await time.increaseTo(timestamp + 86400);
+
+	//     const nonce = await stakingContract.nonce(addr2.address);
+	//     const idx = await stakingContract.getLockIdx(
+	//       addr2.address,
+	//       parseInt(nonce) - 1
+	//     );
+	//     tx = await stakingContract.connect(addr2).unlock(idx);
+	//   });
+
+	//   it("Check lock data", async () => {
+	//     const nonce = await stakingContract.nonce(addr2.address);
+	//     const idx = await stakingContract.getLockIdx(
+	//       addr2.address,
+	//       parseInt(nonce) - 1
+	//     );
+	//     const data = await stakingContract.lockData(idx);
+	//     expect(data.token).to.be.eq(cryptoContract.address);
+	//     expect(data.owner).to.be.eq(addr2.address);
+	//     expect(data.amount.toString()).to.be.eq(
+	//       ethers.utils.parseEther("1000").toString()
+	//     );
+	//   });
+
+	//   it("Check can claimable", async () => {
+	//     const nonce = await stakingContract.nonce(addr2.address);
+	//     const idx = await stakingContract.getLockIdx(
+	//       addr2.address,
+	//       parseInt(nonce) - 1
+	//     );
+	//     const data = await stakingContract.isClaimable(idx);
+	//     expect(data).to.be.eq(true);
+	//   });
+
+	//   it("Check balance of unlocker", async () => {
+	//     const balance = await cryptoContract.balanceOf(addr2.address);
+	//     expect(balance.toString()).to.be.eq(
+	//       ethers.utils.parseEther("1000").toString()
+	//     );
+	//   });
+	// });
 });
