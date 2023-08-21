@@ -138,11 +138,37 @@ describe("Crypto and Staking:", () => {
 			});
 
 			it("Should claim token after 30 days!", async () => {
-				const claimTime = await time.latest() + 86400 * 31; // time after 30 days
+				const claimTime = (await time.latest()) + 86400 * 31; // time after 30 days
 				await time.increaseTo(claimTime);
 				const tx = await stakingContract.connect(addr1);
 
 				await tx.claimToken();
+			});
+
+			it("Should take bonus after claim token!", async () => {
+				const addrBalance = Number(
+					await cryptoContract.balanceOf(addr2.address)
+				);
+				const tokenStaked = Number(
+					await stakingContract.getStakedAmount(addr2.address)
+				);
+				const totalStakeAmount = Number(
+					await stakingContract.getTotalStakedToken()
+				);
+				const stakingContractToken = Number(
+					await stakingContract.getStakingContractToken()
+				);
+
+				const claimToken =
+					addrBalance +
+					tokenStaked +
+					(tokenStaked * stakingContractToken) / totalStakeAmount;
+				const tx = await stakingContract.connect(addr2);
+				await tx.claimToken();
+
+				expect(await cryptoContract.balanceOf(addr2.address)).to.equal(
+					claimToken
+				);
 			});
 		});
 	});
