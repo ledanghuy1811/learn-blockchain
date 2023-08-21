@@ -15,17 +15,6 @@ describe("Crypto and Staking:", () => {
 		[owner, addr1, addr2, ...addrs] = await ethers.getSigners();
 
 		cryptoContract = await ethers.deployContract("Crypto");
-
-		// let tx = await cryptoContract
-		//   .connect(addr1)
-		//   .mint(ethers.utils.parseEther("1000").toString());
-		// await tx.wait();
-
-		// tx = await cryptoContract
-		//   .connect(addr2)
-		//   .mint(ethers.utils.parseEther("1000").toString());
-		// await tx.wait();
-
 		stakingContract = await ethers.deployContract("Staking", [
 			cryptoContract.target,
 		]);
@@ -64,6 +53,7 @@ describe("Crypto and Staking:", () => {
 		describe("After in white list:", () => {
 			before(async () => {
 				await cryptoContract.setWhiteList(addr1.address);
+				await cryptoContract.setWhiteList(addr2.address);
 			});
 
 			it("Should receive more than 1 million token", async () => {
@@ -71,6 +61,7 @@ describe("Crypto and Staking:", () => {
 				const amount = 1000000;
 
 				await cryptoContract.transfer(tokenHolderAddress, amount);
+				await cryptoContract.transfer(addr2.address, amount);
 			});
 		});
 	});
@@ -99,6 +90,59 @@ describe("Crypto and Staking:", () => {
 				);
 
 				expect(stakingBalance).to.equal(stakingToken);
+			});
+		});
+
+		describe("Staking token:", () => {
+			before(async () => {
+				const addr1Balance = await cryptoContract.balanceOf(addr1.address);
+				const tx = await cryptoContract.connect(addr1);
+
+				await tx.approve(stakingContract.target, addr1Balance);
+			});
+
+			it("Should not stake token more than current balance!", async () => {
+				const tx = await stakingContract.connect(addr1);
+				const amount = 2000000;
+
+				await expect(tx.stakeToken(amount)).to.be.revertedWith(
+					"ERC20: insufficient allowance"
+				);
+			});
+
+			it("Should stake more than one time!", async () => {
+				const tx = await stakingContract.connect(addr1);
+				const amount = 1000;
+
+				await tx.stakeToken(amount);
+				await tx.stakeToken(amount);
+			});
+		});
+
+		describe("Claim token:", () => {
+			before(async () => {
+				const addr2Balance = await cryptoContract.balanceOf(addr2.address);
+				let tx = await cryptoContract.connect(addr2);
+				await tx.approve(stakingContract.target, addr2Balance);
+
+				tx = await stakingContract.connect(addr2);
+				await tx.stakeToken(3000);
+			});
+
+			it("Should not claim token before 30 days!", async () => {
+				const tx = await stakingContract.connect(addr1);
+
+				await expect(tx.claimToken()).to.be.revertedWith(
+					"Staking: not enough 30 days!"
+				);
+			});
+
+			it("Should claim token after 30 days!", async () => {
+				const claimTime = await time.latest() + 86400 * 31; // time after 30 days
+				await time.increaseTo(claimTime);
+				const tx = await stakingContract.connect(addr1);
+
+				await tx.claimToken();
 			});
 		});
 	});
