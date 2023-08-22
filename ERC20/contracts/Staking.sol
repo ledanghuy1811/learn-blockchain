@@ -26,7 +26,7 @@ contract Staking is Ownable {
     function initialize() public onlyOwner {
         require(!isInitialize, "Staking: initialized!");
 
-        stakingContractToken = (token.allowance(msg.sender, address(this)) * 3) / 10;
+        stakingContractToken = token.allowance(msg.sender, address(this));
         require(
             token.transferFrom(msg.sender, address(this), stakingContractToken),
             "Staking: transfer failed!"

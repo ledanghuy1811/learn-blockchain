@@ -20,7 +20,8 @@ describe("Crypto and Staking:", () => {
 		]);
 
 		stakingToken =
-			((await cryptoContract.totalSupply()) * BigInt(3)) / BigInt(10);
+			((await cryptoContract.balanceOf(owner.address)) * BigInt(3)) /
+			BigInt(10);
 
 		await cryptoContract.setWhiteList(stakingContract.target);
 		await cryptoContract.approve(stakingContract.target, stakingToken);
@@ -131,7 +132,6 @@ describe("Crypto and Staking:", () => {
 
 			it("Should not claim token before 30 days!", async () => {
 				const tx = await stakingContract.connect(addr1);
-				console.log(await time.latest());
 
 				await expect(tx.claimToken()).to.be.revertedWith(
 					"Staking: not enough 30 days!"
