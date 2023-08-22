@@ -26,7 +26,7 @@ contract Staking is Ownable {
     function initialize() public onlyOwner {
         require(!isInitialize, "Staking: initialized!");
 
-        stakingContractToken = (token.totalSupply() * 3) / 10;
+        stakingContractToken = (token.allowance(msg.sender, address(this)) * 3) / 10;
         require(
             token.transferFrom(msg.sender, address(this), stakingContractToken),
             "Staking: transfer failed!"
@@ -47,6 +47,13 @@ contract Staking is Ownable {
     }
 
     function stakeToken(uint256 amount) public {
+        if (userStakeInfo[msg.sender].dayStart > 0) {
+            require(
+                userStakeInfo[msg.sender].dayEnd > block.timestamp,
+                "Staking: can not stake after 30 days!"
+            );
+        }
+
         StakeInfo memory stake;
         stake.dayStart = block.timestamp;
         stake.dayEnd = block.timestamp + secondPerDay * 30;
@@ -78,10 +85,5 @@ contract Staking is Ownable {
             token.transfer(msg.sender, totalTokenClaim),
             "Staking: claim failed!"
         );
-
-        // reset user stake info
-        userStakeInfo[msg.sender].stakeAmount = 0;
-        userStakeInfo[msg.sender].dayStart = 0;
-        userStakeInfo[msg.sender].dayEnd = 0;
     }
 }

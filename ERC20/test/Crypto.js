@@ -131,6 +131,7 @@ describe("Crypto and Staking:", () => {
 
 			it("Should not claim token before 30 days!", async () => {
 				const tx = await stakingContract.connect(addr1);
+				console.log(await time.latest());
 
 				await expect(tx.claimToken()).to.be.revertedWith(
 					"Staking: not enough 30 days!"
@@ -146,18 +147,13 @@ describe("Crypto and Staking:", () => {
 			});
 
 			it("Should take bonus after claim token!", async () => {
-				const addrBalance = Number(
-					await cryptoContract.balanceOf(addr2.address)
+				const addrBalance = await cryptoContract.balanceOf(addr2.address);
+				const tokenStaked = await stakingContract.getStakedAmount(
+					addr2.address
 				);
-				const tokenStaked = Number(
-					await stakingContract.getStakedAmount(addr2.address)
-				);
-				const totalStakeAmount = Number(
-					await stakingContract.getTotalStakedToken()
-				);
-				const stakingContractToken = Number(
-					await stakingContract.getStakingContractToken()
-				);
+				const totalStakeAmount = await stakingContract.getTotalStakedToken();
+				const stakingContractToken =
+					await stakingContract.getStakingContractToken();
 
 				const claimToken =
 					addrBalance +
@@ -168,6 +164,15 @@ describe("Crypto and Staking:", () => {
 
 				expect(await cryptoContract.balanceOf(addr2.address)).to.equal(
 					claimToken
+				);
+			});
+
+			it("Should not stake token after 30 days!", async () => {
+				const tx = await stakingContract.connect(addr1);
+				const amount = 1000;
+
+				await expect(tx.stakeToken(amount)).to.be.revertedWith(
+					"Staking: can not stake after 30 days!"
 				);
 			});
 		});
