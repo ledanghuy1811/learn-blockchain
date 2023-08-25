@@ -5,107 +5,148 @@ pragma solidity >=0.7.0 <0.9.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract StakingCreator {
-    Staking[] private stakes;
+// contract StakingCreator {
+//     Staking[] private stakes;
 
-    function createStaking(address tokenAddress) public {
-        Staking newStake = new Staking(tokenAddress, msg.sender);
-        stakes.push(newStake);
-    }
+//     function createStaking(address tokenAddress) public {
+//         Staking newStake = new Staking(tokenAddress, _msgSender());
+//         stakes.push(newStake);
+//     }
 
-    function getStakeByIndex(uint256 index) public view returns (Staking) {
-        return Staking(stakes[index]);
-    }
+//     function getStakeByIndex(uint256 index) public view returns (Staking) {
+//         return Staking(stakes[index]);
+//     }
 
-    function getOwner(uint256 index) public view returns (address) {
-        return stakes[index].owner();
-    }
-}
+//     function getOwner(uint256 index) public view returns (address) {
+//         return stakes[index].owner();
+//     }
+// }
 
 contract Staking is Ownable {
-    uint256 private constant secondPerDay = 86400; // second in a day
-    IERC20 private token;
+    uint256 private constant SECOND_PER_DAY = 86400; // second in a day
+    uint256 private count;
 
     struct StakeInfo {
         uint256 stakeAmount;
         uint256 dayStart;
         uint256 dayEnd;
     }
-    mapping(address => StakeInfo) private userStakeInfo; // stake amount of each token holder
-    uint256 private totalStakeAmount; // total stake amount of all token holder
-    bool private isInitialize; // initialize once
-    uint256 private stakingContractToken; // pool stake token
+    struct Pool {
+        address poolOwner;
+        address tokenAddress;
+        mapping(address => StakeInfo) userStakeInfo; // stake amount of each token holder
+        uint256 totalStakeAmount; // total stake amount of all token holder
+        bool isInitialize; // initialize once
+        uint256 stakingContractToken; // pool stake token
+    }
+    mapping(uint256 => Pool) private pools;
 
-    constructor(address tokenAddr, address stakeOwner) Ownable() {
-        token = IERC20(tokenAddr); // address of token contract
-        transferOwnership(stakeOwner); // address of stake owner
+    constructor() Ownable() {}
+
+    function createPool(address tokenAddress) public {
+        Pool storage newPool = pools[count];
+        newPool.poolOwner = _msgSender();
+        newPool.tokenAddress = tokenAddress;
+        count++;
     }
 
-    function initialize() public onlyOwner {
-        require(!isInitialize, "Staking: initialized!");
+    function getPool(uint256 index) public view returns (address) {
+        Pool storage pool = pools[index];
+        return pool.tokenAddress;
+    }
 
-        stakingContractToken = token.allowance(msg.sender, address(this));
+    function initialize(uint256 poolIndex) public {
+        Pool storage pool = pools[poolIndex];
         require(
-            token.transferFrom(msg.sender, address(this), stakingContractToken),
+            _msgSender() == pool.poolOwner,
+            "Staking: you are not the owner!"
+        );
+        require(!pool.isInitialize, "Staking: initialized!");
+
+        uint256 ownerBalance = IERC20(pool.tokenAddress).balanceOf(
+            _msgSender()
+        );
+        uint256 stakingContractToken = IERC20(pool.tokenAddress).allowance(
+            _msgSender(),
+            address(this)
+        );
+        require(
+            stakingContractToken == (ownerBalance * 3) / 10,
+            "Staking: onwer should approve 30% balance!"
+        );
+        require(
+            IERC20(pool.tokenAddress).transferFrom(
+                _msgSender(),
+                address(this),
+                stakingContractToken
+            ),
             "Staking: transfer failed!"
         );
-        isInitialize = true;
+        pool.isInitialize = true;
     }
 
-    function getStakedAmount(address addr) public view returns (uint256) {
-        return userStakeInfo[addr].stakeAmount;
-    }
+    // function getStakedAmount(address addr) public view returns (uint256) {
+    //     return userStakeInfo[addr].stakeAmount;
+    // }
 
-    function getTotalStakedToken() public view returns (uint256) {
-        return totalStakeAmount;
-    }
+    // function getTotalStakedToken() public view returns (uint256) {
+    //     return totalStakeAmount;
+    // }
 
-    function getStakingContractToken() public view returns (uint256) {
-        return stakingContractToken;
-    }
+    // function getStakingContractToken() public view returns (uint256) {
+    //     return stakingContractToken;
+    // }
 
-    function stakeToken(uint256 amount) public {
-        if (userStakeInfo[msg.sender].dayStart > 0) {
+    function stakeToken(uint256 poolIndex, uint256 amount) public {
+        Pool storage pool = pools[poolIndex];
+        if (pool.userStakeInfo[_msgSender()].dayStart > 0) {
             require(
-                userStakeInfo[msg.sender].dayEnd > block.timestamp,
+                pool.userStakeInfo[_msgSender()].dayEnd > block.timestamp,
                 "Staking: can not stake after 30 days!"
             );
         } else {
             require(
-                token.balanceOf(address(this)) > 0,
+                IERC20(pool.tokenAddress).balanceOf(address(this)) > 0,
                 "Staking: nothing to claim after stake!"
             );
         }
 
         StakeInfo memory stake;
         stake.dayStart = block.timestamp;
-        stake.dayEnd = block.timestamp + secondPerDay * 30;
-        if (userStakeInfo[msg.sender].dayStart > 0) {
-            stake.stakeAmount = userStakeInfo[msg.sender].stakeAmount + amount;
+        stake.dayEnd = block.timestamp + SECOND_PER_DAY * 30;
+        if (pool.userStakeInfo[_msgSender()].dayStart > 0) {
+            stake.stakeAmount =
+                pool.userStakeInfo[_msgSender()].stakeAmount +
+                amount;
         } else {
             stake.stakeAmount = amount;
         }
 
         require(
-            token.transferFrom(msg.sender, address(this), amount),
+            IERC20(pool.tokenAddress).transferFrom(
+                _msgSender(),
+                address(this),
+                amount
+            ),
             "Staking: stake failed!"
         );
-        userStakeInfo[msg.sender] = stake;
-        totalStakeAmount += amount;
+        pool.userStakeInfo[_msgSender()] = stake;
+        pool.totalStakeAmount += amount;
     }
 
-    function claimToken() public {
+    function claimToken(uint256 poolIndex) public {
+        Pool storage pool = pools[poolIndex];
         require(
-            userStakeInfo[msg.sender].dayEnd < block.timestamp,
+            pool.userStakeInfo[_msgSender()].dayEnd < block.timestamp,
             "Staking: not enough 30 days!"
         );
 
-        uint256 bonusToken = (userStakeInfo[msg.sender].stakeAmount *
-            stakingContractToken) / totalStakeAmount;
-        uint256 totalTokenClaim = userStakeInfo[msg.sender].stakeAmount +
+        uint256 bonusToken = (pool.userStakeInfo[_msgSender()].stakeAmount *
+            pool.stakingContractToken) / pool.totalStakeAmount;
+        uint256 totalTokenClaim = pool.userStakeInfo[_msgSender()].stakeAmount +
             bonusToken;
         require(
-            token.transfer(msg.sender, totalTokenClaim),
+            IERC20(pool.tokenAddress).transfer(_msgSender(), totalTokenClaim),
             "Staking: claim failed!"
         );
     }
