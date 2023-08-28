@@ -55,7 +55,7 @@ contract Staking is Ownable {
         return pool.tokenAddress;
     }
 
-    function initialize(uint256 poolIndex) public {
+    function initialize(uint256 poolIndex, uint256 amount) public {
         Pool storage pool = pools[poolIndex];
         require(
             _msgSender() == pool.poolOwner,
@@ -63,25 +63,22 @@ contract Staking is Ownable {
         );
         require(!pool.isInitialize, "Staking: initialized!");
 
-        uint256 ownerBalance = IERC20(pool.tokenAddress).balanceOf(
-            _msgSender()
-        );
-        uint256 stakingContractToken = IERC20(pool.tokenAddress).allowance(
-            _msgSender(),
-            address(this)
+        uint256 contractAllowance = IERC20(pool.tokenAddress).allowance(
+            _msgSender(), address(this)
         );
         require(
-            stakingContractToken == (ownerBalance * 3) / 10,
-            "Staking: onwer should approve 30% balance!"
+            contractAllowance > amount,
+            "Staking: allowance must greater than amount!"
         );
         require(
             IERC20(pool.tokenAddress).transferFrom(
                 _msgSender(),
                 address(this),
-                stakingContractToken
+                amount
             ),
             "Staking: transfer failed!"
         );
+        pool.stakingContractToken = amount;
         pool.isInitialize = true;
     }
 
