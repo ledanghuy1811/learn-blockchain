@@ -23,16 +23,16 @@ contract Crypto is ERC20 {
     mapping(address => bool) private whiteList; // use mapping for easier check condition
     mapping(address => bool) private removeLimitList; // use mapping for easier check condition
 
-    constructor(address _router, address _weth) ERC20("Crypto", "CTR") {
+    constructor(address _router) ERC20("Crypto", "CTR") {
         router = _router;
         contractOwner = msg.sender;
         whiteList[contractOwner] = true; // add contractOwner to white list
         whiteList[router] = true; // add router to white list
-        _mint(contractOwner, INITIAL_SUPPLY);   // Because _totalSupply and _balances is private then
+        _mint(contractOwner, INITIAL_SUPPLY);   // Because _totalSupply and _balances is private then 
                                                 // use _mint function to create _totalSupply = INITIAL_SUPPLY
                                                 // and initiate balance of contractOwner equal _totalSupply
         isMinted = true;
-        createPair(address(this), _weth); // first create pair with WETH
+        createPair(address(this), IUniswapV2Router02(router).WETH()); // first create pair with WETH
     }
 
     modifier onlyOwner() {
@@ -46,7 +46,7 @@ contract Crypto is ERC20 {
     function createPair(
         address tokenA,
         address tokenB
-    ) public returns (address pair) {
+    ) public onlyOwner returns (address pair) {
         address factory = IUniswapV2Router02(router).factory();
         pair = IUniswapV2Factory(factory).createPair(tokenA, tokenB);
         address tokenToCreatePairWith = tokenA == address(this)
@@ -54,6 +54,7 @@ contract Crypto is ERC20 {
             : tokenA;
         tokenPairsWith[tokenToCreatePairWith] = pair;
         pairs[pair] = true;
+        setWhiteList(pair);
     }
 
     function removeLimit(address addr) public onlyOwner {
@@ -112,7 +113,11 @@ contract Crypto is ERC20 {
             );
         }
         ERC20._transfer(from, to, _amount);
-        // ERC20._transfer(from, feeTo, _fee);
+        if(feeTo == address(0)) {
+            ERC20._burn(from, _fee);
+        } else {
+            ERC20._transfer(from, feeTo, _fee);
+        }
     }
 
     function _mint(address account, uint256 amount) internal override {
