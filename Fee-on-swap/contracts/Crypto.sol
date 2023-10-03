@@ -101,7 +101,7 @@ contract Crypto is ERC20 {
         uint256 amount
     ) internal override {
         uint256 _fee;
-        if (isPair(to) && !isWhiteListFee(to)) {
+        if (isPair(to) && !isWhiteListFee(from)) {
             _fee = (amount * FEE_ON_BUY_NUMERATOR) /
                 FEE_ON_TRANSFER_DENOMINATOR;
         } else if (isPair(from) && !isWhiteListFee(to)) {
