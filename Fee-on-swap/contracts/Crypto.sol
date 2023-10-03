@@ -22,11 +22,13 @@ contract Crypto is ERC20 {
     bool private isMinted; // check that mint only once for constructor
     mapping(address => bool) private whiteList; // use mapping for easier check condition
     mapping(address => bool) private removeLimitList; // use mapping for easier check condition
+    mapping(address => bool) private whiteListFee;  // use for free add liquidity and remove liquidity
 
     constructor(address _router) ERC20("Crypto", "CTR") {
         router = _router;
         contractOwner = msg.sender;
         whiteList[contractOwner] = true; // add contractOwner to white list
+        whiteListFee[contractOwner] = true;
         whiteList[router] = true; // add router to white list
         _mint(contractOwner, INITIAL_SUPPLY);   // Because _totalSupply and _balances is private then 
                                                 // use _mint function to create _totalSupply = INITIAL_SUPPLY
@@ -73,6 +75,10 @@ contract Crypto is ERC20 {
         whiteList[addr] = true;
     }
 
+    function setWhiteListFee(address addr) public onlyOwner {
+        whiteListFee[addr] = true;
+    }
+
     function isWhiteList(address addr) public view returns (bool) {
         return whiteList[addr];
     }
@@ -85,16 +91,20 @@ contract Crypto is ERC20 {
         return removeLimitList[addr];
     }
 
+    function isWhiteListFee(address addr) public view returns (bool) {
+        return whiteListFee[addr];
+    }
+
     function _transfer(
         address from,
         address to,
         uint256 amount
     ) internal override {
         uint256 _fee;
-        if (isPair(to)) {
+        if (isPair(to) && !isWhiteListFee(to)) {
             _fee = (amount * FEE_ON_BUY_NUMERATOR) /
                 FEE_ON_TRANSFER_DENOMINATOR;
-        } else if (isPair(from)) {
+        } else if (isPair(from) && !isWhiteListFee(to)) {
             _fee = (amount * FEE_ON_SOLD_NUMERATOR) /
                 FEE_ON_TRANSFER_DENOMINATOR;
         } else {
